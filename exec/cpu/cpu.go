@@ -347,10 +347,17 @@ func burn(ctx context.Context, quota <-chan int64, slopePercent float64, precpu 
 		ds = 0
 	}
 	fmt.Println(q, ds, slopePercent)
+	iterator := 0
 	for {
 		select {
 			// 使用这quota channel有两个问题，一个是数据不准，一个是可能在default之前连续更新两次q，还都不准。
 		case offset := <-quota:
+			// 防止可能出现的多次更新，使得每一次default对应一次修改，虽然有offset不准确
+			if iterator > 0 {
+				continue
+			}
+			iterator = 1
+
 			q = q + offset
 			fmt.Println("xxxxxxxxxxxx", q, offset)
 			if q < 0 {
@@ -374,6 +381,7 @@ func burn(ctx context.Context, quota <-chan int64, slopePercent float64, precpu 
 				totalCpuPercent, err := cpu.Percent(0, true)
 				if err != nil {
 					log.Fatalf(ctx, "get cpu usage fail, %s", err.Error())
+					iterator--
 					continue
 				}
 				fmt.Println("sssssssssss", totalCpuPercent[cpuIndex])
@@ -385,6 +393,7 @@ func burn(ctx context.Context, quota <-chan int64, slopePercent float64, precpu 
 					// 正常情况也可能跑到这里导致CPU频率下降
 					fmt.Println("current CPU load is higher than slopePercent.", q, ds, cpuPercent)
 					log.Debugf(ctx, "current CPU load is higher than slopePercent.")
+					iterator--
 					continue
 				}
 				// 此时我们认为数据可能是正常的，开始基于totalCpuPercent计算q，ds
@@ -407,6 +416,7 @@ func burn(ctx context.Context, quota <-chan int64, slopePercent float64, precpu 
 			// 当cpuPercent为零的时候stress_cpu会跑的很快
 			stress_cpu(time.Duration(q+ds), cpuPercent)
 			beforeCpuPercent = cpuPercent
+			iterator--
 		}
 	}
 }
